@@ -399,7 +399,7 @@ class WindowsMutexMappingLeaseBackend(LeaseBackend):
         with self._held_lock:
             if resource_id in self._held:
                 # Same-process re-acquire → fail-fast like the cross-process case
-                raise LeaseConflict(resource_id, self.query(resource_id))
+                raise LeaseConflict(resource_id, self._held[resource_id].info)
 
         acquired_evt = threading.Event()
         failed_evt = threading.Event()

@@ -115,7 +115,7 @@ class AbstractSocketLeaseBackend(LeaseBackend):
 
         with self._held_lock:
             if resource_id in self._held:
-                raise LeaseConflict(resource_id, self.query(resource_id))
+                raise LeaseConflict(resource_id, self._held[resource_id].info)
 
         if info.pid == 0:
             info = replace(info, pid=os.getpid())
