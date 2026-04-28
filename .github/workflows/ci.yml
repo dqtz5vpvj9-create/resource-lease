@@ -16,6 +16,7 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
+          cache-suffix: dist-3.13
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -39,6 +40,7 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
+          cache-suffix: linux-${{ matrix.python-version }}
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
@@ -63,6 +65,7 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
+          cache-suffix: windows-${{ matrix.python-version }}
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
