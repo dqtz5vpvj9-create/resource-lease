@@ -18,9 +18,11 @@ info = LeaseInfo(
     agent_name="agent-a",
     purpose="run benchmark shard 3",
     run_id="2026-04-28-103104",
+    status="allocated",
 )
 
-with backend.acquire("gpu:0", info):
+with backend.acquire("gpu:0", info) as lease:
+    lease.update_status("in_use", phase="demo")
     run_benchmark()
 ```
 
@@ -36,6 +38,16 @@ pro0:0.0.0.0:6520
 ```
 
 It does not parse device names, hosts, ports, or resource classes. Consumers choose a namespace and pass `resource_id` strings through unchanged.
+
+Owner metadata includes a mutable `status` field. Backends that support
+metadata updates let the owner publish state transitions without releasing the
+lease:
+
+```python
+lease = backend.acquire("gpu:0", LeaseInfo(resource_id="gpu:0", status="allocated"))
+lease.update_status("in_use", job="benchmark shard 3")
+lease.release()
+```
 
 ## Install
 

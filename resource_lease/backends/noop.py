@@ -37,7 +37,26 @@ class NoopLeaseBackend(LeaseBackend):
                 owner_token=new_owner_token(info.pid or os.getpid()),
             )
             self._held[resource_id] = stamped
-        return LeaseHandle(resource_id, stamped, lambda: self._release(resource_id))
+        return LeaseHandle(
+            resource_id,
+            stamped,
+            lambda: self._release(resource_id),
+            lambda info, rid=resource_id: self.update(rid, info),
+        )
+
+    def update(self, resource_id: str, info: LeaseInfo) -> LeaseInfo:
+        with self._lock:
+            current = self._held.get(resource_id)
+            if current is None:
+                raise RuntimeError(f"resource is not held by this backend: {resource_id!r}")
+            stamped = info.with_backend_metadata(
+                namespace=self.namespace,
+                resource_hash=current.resource_hash,
+                owner_token=current.owner_token,
+            )
+            stamped.started_at = current.started_at
+            self._held[resource_id] = stamped
+            return stamped
 
     def _release(self, resource_id: str) -> None:
         with self._lock:

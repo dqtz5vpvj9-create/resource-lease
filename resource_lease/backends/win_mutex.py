@@ -24,7 +24,7 @@ import logging
 import os
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional
 
 from ..base import LeaseBackend
@@ -335,6 +335,9 @@ def _read_shard_frame(view) -> Optional[dict]:
 class _Held:
     keeper: threading.Thread
     release_event: threading.Event
+    rid_hash: str
+    info: LeaseInfo
+    lock: threading.Lock
 
 
 # ── backend ──────────────────────────────────────────────────────────────
@@ -381,7 +384,6 @@ class WindowsMutexMappingLeaseBackend(LeaseBackend):
         rid_hash = _hash16(resource_id)
         owner_token = new_owner_token(info.pid or os.getpid())
 
-        from dataclasses import replace
         if info.pid == 0:
             info = replace(info, pid=os.getpid())
         stamped = info.with_backend_metadata(
@@ -417,11 +419,54 @@ class WindowsMutexMappingLeaseBackend(LeaseBackend):
             raise LeaseConflict(resource_id, result.get("owner"))  # type: ignore[arg-type]
 
         with self._held_lock:
-            self._held[resource_id] = _Held(keeper=keeper, release_event=release_evt)
+            self._held[resource_id] = _Held(
+                keeper=keeper,
+                release_event=release_evt,
+                rid_hash=rid_hash,
+                info=stamped,
+                lock=threading.Lock(),
+            )
 
         return LeaseHandle(
-            resource_id, stamped, lambda rid=resource_id: self._release(rid)
+            resource_id,
+            stamped,
+            lambda rid=resource_id: self._release(rid),
+            lambda info, rid=resource_id: self.update(rid, info),
         )
+
+    def update(self, resource_id: str, info: LeaseInfo) -> LeaseInfo:
+        with self._held_lock:
+            held = self._held.get(resource_id)
+        if held is None:
+            raise RuntimeError(f"resource is not held by this backend: {resource_id!r}")
+        with held.lock:
+            current = held.info
+            if info.pid == 0:
+                info = replace(info, pid=current.pid or os.getpid())
+            stamped = replace(
+                info,
+                namespace=self.namespace,
+                resource_hash=current.resource_hash,
+                owner_token=current.owner_token,
+                started_at=current.started_at,
+                metadata_available=True,
+            )
+            info_name = _resource_info_name(
+                self.scope, self._sid_hash, self._ns_hash, held.rid_hash
+            )
+            h_map = _open_file_mapping(info_name, write=True)
+            view = None
+            try:
+                view = _MapView(h_map, INFO_MAPPING_SIZE, write=True)
+                self._write_info_frame(view, stamped)
+                view.flush()
+            finally:
+                if view is not None:
+                    view.close()
+                _close_mapping_handle(h_map)
+            self._register_index_entry(held.rid_hash, stamped)
+            held.info = stamped
+            return stamped
 
     def _release(self, resource_id: str) -> None:
         with self._held_lock:
@@ -731,6 +776,7 @@ class WindowsMutexMappingLeaseBackend(LeaseBackend):
                         "purpose": info.purpose,
                         "run_id": info.run_id,
                         "started_at": info.started_at,
+                        "status": info.status,
                     })
                     body["entries"] = entries
                     body["updated_at"] = time.time()

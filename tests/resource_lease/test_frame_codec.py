@@ -25,6 +25,7 @@ def _sample_info() -> LeaseInfo:
         started_at=1700000000.5,
         cmdline="python -m foo",
         extra={"k": "v", "nested": {"a": 1}},
+        status="allocated",
         namespace="ns.x",
         resource_hash="aabbccdd",
         owner_token="12345-99-deadbeef",
@@ -39,7 +40,7 @@ def test_round_trip():
     for fld in (
         "resource_id", "agent_name", "purpose", "run_id",
         "pid", "uid", "started_at", "cmdline", "extra",
-        "namespace", "resource_hash", "owner_token",
+        "status", "namespace", "resource_hash", "owner_token",
     ):
         assert getattr(decoded, fld) == getattr(info, fld), fld
 
@@ -143,4 +144,5 @@ def test_defaults_when_json_fields_missing():
     assert decoded.resource_id == "r0"
     assert decoded.agent_name == ""
     assert decoded.extra == {}
+    assert decoded.status == "busy"
     assert decoded.metadata_available is True

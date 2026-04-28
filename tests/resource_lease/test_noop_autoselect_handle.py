@@ -16,11 +16,16 @@ from resource_lease.backends.noop import NoopLeaseBackend
 def test_noop_backend_full_cycle_and_conflict():
     backend = NoopLeaseBackend("noop.ns")
     assert backend.query("r0") is None
+    with pytest.raises(RuntimeError):
+        backend.update("r0", LeaseInfo(resource_id="r0"))
     assert backend.list() == []
     assert backend.list_namespaces() == []
 
     h = backend.acquire("r0", LeaseInfo(resource_id="r0", agent_name="owner"))
     assert backend.query("r0").agent_name == "owner"
+    h.update_status("in_use", reason="test")
+    assert backend.query("r0").status == "in_use"
+    assert backend.query("r0").extra["reason"] == "test"
     assert backend.list() == [h.info]
     assert backend.list_namespaces() == ["noop.ns"]
 
@@ -51,6 +56,15 @@ def test_handle_context_manager_and_swallowed_release_error():
     assert h.released
     h.release()
     assert calls == ["release"]
+
+
+def test_handle_update_without_backend_support():
+    h = LeaseHandle("r0", LeaseInfo(resource_id="r0"), lambda: None)
+    with pytest.raises(NotImplementedError):
+        h.update_status("in_use")
+    h.release()
+    with pytest.raises(RuntimeError):
+        h.update_status("allocated")
 
 
 def test_auto_select_forced_none():

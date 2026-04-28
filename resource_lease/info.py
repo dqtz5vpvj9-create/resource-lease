@@ -49,6 +49,7 @@ class LeaseInfo:
     started_at: float = 0.0
     cmdline: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
+    status: str = "busy"
     namespace: str = ""
     resource_hash: str = ""
     owner_token: str = ""
@@ -93,6 +94,7 @@ def _info_to_json_bytes(info: LeaseInfo) -> bytes:
         "started_at": info.started_at,
         "cmdline": info.cmdline,
         "extra": info.extra,
+        "status": info.status,
         "metadata_available": info.metadata_available,
     }
     return json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -115,6 +117,7 @@ def _json_bytes_to_info(buf: bytes) -> Optional[LeaseInfo]:
         started_at=float(body.get("started_at") or 0.0),
         cmdline=body.get("cmdline", "") or "",
         extra=body.get("extra") or {},
+        status=body.get("status", "") or "busy",
         namespace=body.get("namespace", "") or "",
         resource_hash=body.get("resource_hash", "") or "",
         owner_token=body.get("owner_token", "") or "",

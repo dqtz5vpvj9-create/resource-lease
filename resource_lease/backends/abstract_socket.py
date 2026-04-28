@@ -78,6 +78,9 @@ class _Lease:
     sock: socket.socket
     thread: threading.Thread
     closed: threading.Event
+    info: LeaseInfo
+    frame: bytes
+    lock: threading.Lock
 
 
 class AbstractSocketLeaseBackend(LeaseBackend):
@@ -130,20 +133,55 @@ class AbstractSocketLeaseBackend(LeaseBackend):
         sock.listen(8)
 
         closed = threading.Event()
+        lease = _Lease(
+            sock=sock,
+            thread=None,  # type: ignore[arg-type]
+            closed=closed,
+            info=stamped,
+            frame=frame,
+            lock=threading.Lock(),
+        )
         thread = threading.Thread(
             target=self._serve,
             name=f"resource_lease.serve[{self.namespace}/{rhash}]",
-            args=(sock, frame, closed),
+            args=(lease,),
             daemon=True,
         )
+        lease.thread = thread
         thread.start()
 
         with self._held_lock:
-            self._held[resource_id] = _Lease(sock=sock, thread=thread, closed=closed)
+            self._held[resource_id] = lease
 
         return LeaseHandle(
-            resource_id, stamped, lambda rid=resource_id: self._release(rid)
+            resource_id,
+            stamped,
+            lambda rid=resource_id: self._release(rid),
+            lambda info, rid=resource_id: self.update(rid, info),
         )
+
+    def update(self, resource_id: str, info: LeaseInfo) -> LeaseInfo:
+        with self._held_lock:
+            lease = self._held.get(resource_id)
+        if lease is None:
+            raise RuntimeError(f"resource is not held by this backend: {resource_id!r}")
+        with lease.lock:
+            current = lease.info
+            if info.pid == 0:
+                info = replace(info, pid=current.pid or os.getpid())
+            if info.uid == 0:
+                info = replace(info, uid=current.uid or self._uid)
+            stamped = replace(
+                info,
+                namespace=self.namespace,
+                resource_hash=current.resource_hash,
+                owner_token=current.owner_token,
+                started_at=current.started_at,
+                metadata_available=True,
+            )
+            lease.info = stamped
+            lease.frame = encode_frame(stamped)
+            return stamped
 
     def _release(self, resource_id: str) -> None:
         with self._held_lock:
@@ -168,7 +206,9 @@ class AbstractSocketLeaseBackend(LeaseBackend):
 
     # ── serve thread ─────────────────────────────────────────────────────
 
-    def _serve(self, sock: socket.socket, frame: bytes, closed: threading.Event) -> None:
+    def _serve(self, lease: _Lease) -> None:
+        sock = lease.sock
+        closed = lease.closed
         while not closed.is_set():
             try:
                 conn, _ = sock.accept()
@@ -189,6 +229,8 @@ class AbstractSocketLeaseBackend(LeaseBackend):
                     continue
                 if req.strip() == b"GET":
                     try:
+                        with lease.lock:
+                            frame = lease.frame
                         conn.sendall(frame)
                     except OSError:
                         pass

@@ -192,6 +192,24 @@ def test_backend_init_acquire_release_close_edges(monkeypatch):
     assert b.query("a") is None
 
 
+def test_update_missing_resource_and_zero_pid_branch():
+    b = WindowsMutexMappingLeaseBackend(_ns())
+    with pytest.raises(RuntimeError):
+        b.update("missing", _info("missing"))
+
+    h = b.acquire("r0", _info("r0", pid=os.getpid()))
+    try:
+        updated = b.update(
+            "r0",
+            LeaseInfo(resource_id="r0", agent_name="zero-pid", pid=0),
+        )
+        assert updated.pid == os.getpid()
+        assert b.query("r0").agent_name == "zero-pid"
+    finally:
+        h.release()
+        b.close()
+
+
 def test_query_error_and_busy_stub_branches(monkeypatch):
     b = WindowsMutexMappingLeaseBackend(_ns())
 

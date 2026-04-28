@@ -61,7 +61,7 @@ def status_rows(
             continue
         rows.append({
             "resource_id": rid,
-            "status": "busy",
+            "status": owner.status or "busy",
             "owner": owner,
             "age": _fmt_age(owner.started_at, now),
         })
@@ -103,7 +103,7 @@ def status_table(
         else:
             body.append((
                 r["resource_id"],
-                "busy",
+                r["status"],
                 _truncate(owner.agent_name or "?", 24),
                 str(owner.pid),
                 _truncate(owner.purpose or "-", 28),
@@ -136,11 +136,12 @@ def list_table(
         out.write(f"(no active leases in namespace {backend.namespace!r})\n")
         return 0
 
-    headers = ("RESOURCE", "OWNER", "PID", "PURPOSE", "RUN_ID", "AGE")
+    headers = ("RESOURCE", "STATUS", "OWNER", "PID", "PURPOSE", "RUN_ID", "AGE")
     now = time.time()
     body = [
         (
             _truncate(i.resource_id, 32),
+            _truncate(i.status or "busy", 14),
             _truncate(i.agent_name or "?", 24),
             str(i.pid),
             _truncate(i.purpose or "-", 28),
@@ -166,6 +167,7 @@ def _info_to_dict(info: LeaseInfo) -> dict:
         "started_at": info.started_at,
         "cmdline": info.cmdline,
         "extra": info.extra,
+        "status": info.status,
         "metadata_available": info.metadata_available,
     }
 

@@ -28,4 +28,9 @@ class _BackendWithDefaultClose(LeaseBackend):
 
 
 def test_default_close_is_noop():
-    assert _BackendWithDefaultClose().close() is None
+    backend = _BackendWithDefaultClose()
+    assert backend.close() is None
+    try:
+        backend.update("r0", LeaseInfo(resource_id="r0"))
+    except NotImplementedError as exc:
+        assert "metadata updates" in str(exc)

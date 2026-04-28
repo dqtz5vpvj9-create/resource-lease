@@ -44,6 +44,10 @@ class LeaseBackend(ABC):
         May be more expensive than :meth:`list` since it scans across namespaces.
         """
 
+    def update(self, resource_id: str, info: LeaseInfo) -> LeaseInfo:
+        """Update metadata for a lease held by this backend instance."""
+        raise NotImplementedError("lease backend does not support metadata updates")
+
     def close(self) -> None:
         """Release backend-level caches (file mapping handles etc.).
 

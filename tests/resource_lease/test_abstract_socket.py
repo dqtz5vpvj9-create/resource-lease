@@ -7,6 +7,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 
@@ -87,6 +88,37 @@ def test_query_returns_metadata_when_busy():
         assert q.pid == os.getpid()
         assert q.uid == os.getuid()
         assert q.owner_token == h.info.owner_token
+    finally:
+        h.release()
+
+
+def test_update_status_publishes_new_metadata():
+    b = AbstractSocketLeaseBackend(_ns())
+    h = b.acquire("r0", _info(agent_name="A", purpose="P", status="allocated"))
+    try:
+        assert b.query("r0").status == "allocated"
+        updated = h.update_status("in_use", job_name="job-a")
+        assert updated.status == "in_use"
+        q = b.query("r0")
+        assert q is not None
+        assert q.status == "in_use"
+        assert q.owner_token == h.info.owner_token
+        assert q.started_at == h.info.started_at
+        assert q.extra["job_name"] == "job-a"
+    finally:
+        h.release()
+
+
+def test_update_fills_pid_uid_and_rejects_not_held():
+    b = AbstractSocketLeaseBackend(_ns())
+    with pytest.raises(RuntimeError):
+        b.update("missing", _info("missing"))
+    h = b.acquire("r0", _info(agent_name="A"))
+    try:
+        updated = h.update(LeaseInfo(resource_id="r0", agent_name="B", status="allocated"))
+        assert updated.pid == os.getpid()
+        assert updated.uid == os.getuid()
+        assert b.query("r0").agent_name == "B"
     finally:
         h.release()
 
@@ -368,7 +400,14 @@ def test_release_missing_and_socket_close_errors_are_ignored():
 
     b = AbstractSocketLeaseBackend(_ns())
     b._release("missing")
-    b._held["r0"] = _Lease(sock=BadSock(), thread=None, closed=__import__("threading").Event())
+    b._held["r0"] = _Lease(
+        sock=BadSock(),
+        thread=None,
+        closed=threading.Event(),
+        info=_info(),
+        frame=b"frame",
+        lock=threading.Lock(),
+    )
     b._release("r0")
     assert "r0" not in b._held
 
@@ -421,13 +460,24 @@ class _FakeConn:
             raise OSError("close")
 
 
+def _fake_lease(conn, frame=b"frame"):
+    return _Lease(
+        sock=_FakeServerSocket(conn),
+        thread=None,
+        closed=threading.Event(),
+        info=_info(),
+        frame=frame,
+        lock=threading.Lock(),
+    )
+
+
 def test_serve_permission_denied_send_error(monkeypatch):
     from resource_lease.backends import abstract_socket as mod
 
     b = AbstractSocketLeaseBackend(_ns())
     conn = _FakeConn(send_error=True)
     monkeypatch.setattr(mod, "_peer_uid", lambda c: os.getuid() + 1)
-    b._serve(_FakeServerSocket(conn), b"frame", __import__("threading").Event())
+    b._serve(_fake_lease(conn))
 
 
 def test_serve_recv_error_and_close_error(monkeypatch):
@@ -436,7 +486,7 @@ def test_serve_recv_error_and_close_error(monkeypatch):
     b = AbstractSocketLeaseBackend(_ns())
     conn = _FakeConn(recv_error=True, close_error=True)
     monkeypatch.setattr(mod, "_peer_uid", lambda c: os.getuid())
-    b._serve(_FakeServerSocket(conn), b"frame", __import__("threading").Event())
+    b._serve(_fake_lease(conn))
 
 
 def test_serve_get_send_error(monkeypatch):
@@ -445,7 +495,7 @@ def test_serve_get_send_error(monkeypatch):
     b = AbstractSocketLeaseBackend(_ns())
     conn = _FakeConn(send_error=True)
     monkeypatch.setattr(mod, "_peer_uid", lambda c: os.getuid())
-    b._serve(_FakeServerSocket(conn), b"frame", __import__("threading").Event())
+    b._serve(_fake_lease(conn))
 
 
 def test_serve_unknown_request_success_and_send_error(monkeypatch):
@@ -455,11 +505,11 @@ def test_serve_unknown_request_success_and_send_error(monkeypatch):
     monkeypatch.setattr(mod, "_peer_uid", lambda c: os.getuid())
 
     ok = _FakeConn(recv_value=b"BAD\n")
-    b._serve(_FakeServerSocket(ok), b"frame", __import__("threading").Event())
+    b._serve(_fake_lease(ok))
     assert ok.sent == [b'{"error":"unknown_request"}\n']
 
     bad = _FakeConn(recv_value=b"BAD\n", send_error=True)
-    b._serve(_FakeServerSocket(bad), b"frame", __import__("threading").Event())
+    b._serve(_fake_lease(bad))
 
 
 def test_connect_and_get_send_recv_empty_timeout_and_close_errors(monkeypatch):

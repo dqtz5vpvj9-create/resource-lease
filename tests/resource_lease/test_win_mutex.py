@@ -58,6 +58,22 @@ def test_acquire_query_release_cycle():
     assert WindowsMutexMappingLeaseBackend(b.namespace).query("r0") is None
 
 
+def test_update_status_publishes_new_metadata():
+    b = WindowsMutexMappingLeaseBackend(_ns())
+    h = b.acquire("r0", _info(agent_name="owner", status="allocated"))
+    try:
+        assert b.query("r0").status == "allocated"
+        h.update_status("in_use", job_name="job-a")
+        q = b.query("r0")
+        assert q is not None
+        assert q.status == "in_use"
+        assert q.extra["job_name"] == "job-a"
+        assert q.owner_token == h.info.owner_token
+    finally:
+        h.release()
+        b.close()
+
+
 def test_conflict_carries_owner_metadata():
     ns = _ns()
     a = WindowsMutexMappingLeaseBackend(ns)
