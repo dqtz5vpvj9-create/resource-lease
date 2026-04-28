@@ -16,7 +16,7 @@ def _info() -> LeaseInfo:
         resource_id="r0",
         agent_name="tester",
         pid=os.getpid(),
-        uid=os.getuid(),
+        uid=os.getuid() if hasattr(os, "getuid") else 0,
     )
 
 
