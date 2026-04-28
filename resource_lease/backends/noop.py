@@ -15,18 +15,24 @@ from typing import Dict, List, Optional
 from ..base import LeaseBackend
 from ..errors import LeaseConflict
 from ..handle import LeaseHandle
-from ..info import LeaseInfo, new_owner_token
+from ..info import LeaseInfo, new_owner_token, validate_namespace, validate_resource_id
 
 logger = logging.getLogger("resource_lease.noop")
 
 
 class NoopLeaseBackend(LeaseBackend):
     def __init__(self, namespace: str) -> None:
-        self.namespace = namespace
+        self.namespace = validate_namespace(namespace)
         self._lock = threading.Lock()
         self._held: Dict[str, LeaseInfo] = {}
 
     def acquire(self, resource_id: str, info: LeaseInfo) -> LeaseHandle:
+        resource_id = validate_resource_id(resource_id)
+        if info.resource_id != resource_id:
+            raise ValueError(
+                f"LeaseInfo.resource_id {info.resource_id!r} does not match "
+                f"acquire resource_id {resource_id!r}"
+            )
         with self._lock:
             existing = self._held.get(resource_id)
             if existing is not None:
@@ -45,6 +51,12 @@ class NoopLeaseBackend(LeaseBackend):
         )
 
     def update(self, resource_id: str, info: LeaseInfo) -> LeaseInfo:
+        resource_id = validate_resource_id(resource_id)
+        if info.resource_id != resource_id:
+            raise ValueError(
+                f"LeaseInfo.resource_id {info.resource_id!r} does not match "
+                f"update resource_id {resource_id!r}"
+            )
         with self._lock:
             current = self._held.get(resource_id)
             if current is None:
@@ -59,12 +71,14 @@ class NoopLeaseBackend(LeaseBackend):
             return stamped
 
     def _release(self, resource_id: str) -> None:
+        resource_id = validate_resource_id(resource_id)
         with self._lock:
             self._held.pop(resource_id, None)
 
     def query(
         self, resource_id: str, *, timeout: float = 0.5
     ) -> Optional[LeaseInfo]:
+        resource_id = validate_resource_id(resource_id)
         with self._lock:
             return self._held.get(resource_id)
 

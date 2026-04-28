@@ -26,7 +26,14 @@ from typing import Dict, List, Optional
 from ..base import LeaseBackend
 from ..errors import LeaseConflict
 from ..handle import LeaseHandle
-from ..info import LeaseInfo, decode_frame, encode_frame, new_owner_token
+from ..info import (
+    LeaseInfo,
+    decode_frame,
+    encode_frame,
+    new_owner_token,
+    validate_namespace,
+    validate_resource_id,
+)
 
 logger = logging.getLogger("resource_lease.abstract_socket")
 
@@ -37,6 +44,7 @@ _UCRED_LEN = struct.calcsize(_UCRED_FMT)
 
 
 def _resource_hash(resource_id: str) -> str:
+    resource_id = validate_resource_id(resource_id)
     return hashlib.sha256(resource_id.encode("utf-8")).hexdigest()[:16]
 
 
@@ -85,11 +93,7 @@ class _Lease:
 
 class AbstractSocketLeaseBackend(LeaseBackend):
     def __init__(self, namespace: str) -> None:
-        if "." in namespace and any(p == "" for p in namespace.split(".")):
-            raise ValueError(f"namespace must not contain empty dot segments: {namespace!r}")
-        if not namespace:
-            raise ValueError("namespace must be non-empty")
-        self.namespace = namespace
+        self.namespace = validate_namespace(namespace)
         self._uid = os.getuid()
         # Backend owns the underlying sockets so a forgotten/GC'd LeaseHandle
         # does NOT silently release the lease. Released only by explicit
@@ -100,6 +104,12 @@ class AbstractSocketLeaseBackend(LeaseBackend):
     # ── acquire / release ────────────────────────────────────────────────
 
     def acquire(self, resource_id: str, info: LeaseInfo) -> LeaseHandle:
+        resource_id = validate_resource_id(resource_id)
+        if info.resource_id != resource_id:
+            raise ValueError(
+                f"LeaseInfo.resource_id {info.resource_id!r} does not match "
+                f"acquire resource_id {resource_id!r}"
+            )
         name = _abstract_name(self.namespace, self._uid, resource_id)
         rhash = _resource_hash(resource_id)
 
@@ -161,6 +171,12 @@ class AbstractSocketLeaseBackend(LeaseBackend):
         )
 
     def update(self, resource_id: str, info: LeaseInfo) -> LeaseInfo:
+        resource_id = validate_resource_id(resource_id)
+        if info.resource_id != resource_id:
+            raise ValueError(
+                f"LeaseInfo.resource_id {info.resource_id!r} does not match "
+                f"update resource_id {resource_id!r}"
+            )
         with self._held_lock:
             lease = self._held.get(resource_id)
         if lease is None:
@@ -184,6 +200,7 @@ class AbstractSocketLeaseBackend(LeaseBackend):
             return stamped
 
     def _release(self, resource_id: str) -> None:
+        resource_id = validate_resource_id(resource_id)
         with self._held_lock:
             lease = self._held.pop(resource_id, None)
         if lease is None:
@@ -250,6 +267,7 @@ class AbstractSocketLeaseBackend(LeaseBackend):
     def query(
         self, resource_id: str, *, timeout: float = 0.5
     ) -> Optional[LeaseInfo]:
+        resource_id = validate_resource_id(resource_id)
         name = _abstract_name(self.namespace, self._uid, resource_id)
         return _connect_and_get(name, timeout)
 

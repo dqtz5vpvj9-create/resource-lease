@@ -214,6 +214,13 @@ def test_main_info_busy_text_and_json(capsys):
         h.release()
 
 
+def test_main_reports_invalid_namespace(capsys):
+    rc = main(["--backend", "none", "list", "--namespace", "bad ns"])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "ERROR: namespace must not contain whitespace" in captured.err
+
+
 def test_main_list_active_and_json(capsys):
     ns = _ns()
     b = auto_select_backend(ns, force="abstract")

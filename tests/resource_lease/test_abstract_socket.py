@@ -123,6 +123,22 @@ def test_update_fills_pid_uid_and_rejects_not_held():
         h.release()
 
 
+def test_acquire_rejects_mismatched_info_resource_id():
+    b = AbstractSocketLeaseBackend(_ns())
+    with pytest.raises(ValueError, match="does not match"):
+        b.acquire("r0", _info("r1"))
+
+
+def test_update_rejects_mismatched_info_resource_id():
+    b = AbstractSocketLeaseBackend(_ns())
+    h = b.acquire("r0", _info("r0"))
+    try:
+        with pytest.raises(ValueError, match="does not match"):
+            b.update("r0", _info("r1"))
+    finally:
+        h.release()
+
+
 def test_release_is_idempotent():
     b = AbstractSocketLeaseBackend(_ns())
     h = b.acquire("r0", _info())
@@ -309,10 +325,10 @@ def test_namespace_isolation_same_resource_id():
     ns_b = _ns()
     ba = AbstractSocketLeaseBackend(ns_a)
     bb = AbstractSocketLeaseBackend(ns_b)
-    ha = ba.acquire("dev0", _info(agent_name="A"))
+    ha = ba.acquire("dev0", _info("dev0", agent_name="A"))
     try:
         # Same resource_id but different namespace must not conflict.
-        hb = bb.acquire("dev0", _info(agent_name="B"))
+        hb = bb.acquire("dev0", _info("dev0", agent_name="B"))
         hb.release()
     finally:
         ha.release()

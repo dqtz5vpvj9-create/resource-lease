@@ -222,46 +222,56 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     force = None if args.backend == "auto" else args.backend
 
-    if args.cmd == "list-namespaces":
-        # We need *some* backend to enumerate; namespace value is irrelevant.
-        backend = auto_select_backend("__list__", force=force)
-        names = backend.list_namespaces()
-        if args.json:
-            sys.stdout.write(json.dumps({"namespaces": names}, indent=2) + "\n")
-        else:
-            for n in names:
-                sys.stdout.write(n + "\n")
-            if not names:
-                sys.stdout.write("(no active namespaces)\n")
-        return 0
-
-    backend = auto_select_backend(args.namespace, force=force)
-
-    if args.cmd == "status":
-        busy = status_table(backend, args.resources, json_output=args.json)
-        return 1 if busy else 0
-
-    if args.cmd == "list":
-        list_table(backend, json_output=args.json)
-        return 0
-
-    if args.cmd == "info":
-        info = backend.query(args.resource)
-        if info is None:
+    try:
+        if args.cmd == "list-namespaces":
+            # We need *some* backend to enumerate; namespace value is irrelevant.
+            backend = auto_select_backend("__list__", force=force)
+            names = backend.list_namespaces()
             if args.json:
-                sys.stdout.write(json.dumps({"resource_id": args.resource, "status": "idle"}, indent=2) + "\n")
+                sys.stdout.write(json.dumps({"namespaces": names}, indent=2) + "\n")
             else:
-                sys.stdout.write(f"{args.resource}: idle\n")
+                for n in names:
+                    sys.stdout.write(n + "\n")
+                if not names:
+                    sys.stdout.write("(no active namespaces)\n")
             return 0
-        if args.json:
-            sys.stdout.write(json.dumps({
-                "resource_id": args.resource,
-                "status": "busy",
-                "owner": _info_to_dict(info),
-            }, indent=2) + "\n")
-        else:
-            for k, v in _info_to_dict(info).items():
-                sys.stdout.write(f"{k:>14}: {v}\n")
-        return 1
+
+        backend = auto_select_backend(args.namespace, force=force)
+
+        if args.cmd == "status":
+            busy = status_table(backend, args.resources, json_output=args.json)
+            return 1 if busy else 0
+
+        if args.cmd == "list":
+            list_table(backend, json_output=args.json)
+            return 0
+
+        if args.cmd == "info":
+            info = backend.query(args.resource)
+            if info is None:
+                if args.json:
+                    sys.stdout.write(
+                        json.dumps(
+                            {"resource_id": args.resource, "status": "idle"},
+                            indent=2,
+                        )
+                        + "\n"
+                    )
+                else:
+                    sys.stdout.write(f"{args.resource}: idle\n")
+                return 0
+            if args.json:
+                sys.stdout.write(json.dumps({
+                    "resource_id": args.resource,
+                    "status": "busy",
+                    "owner": _info_to_dict(info),
+                }, indent=2) + "\n")
+            else:
+                for k, v in _info_to_dict(info).items():
+                    sys.stdout.write(f"{k:>14}: {v}\n")
+            return 1
+    except (RuntimeError, ValueError, TypeError) as e:
+        sys.stderr.write(f"ERROR: {e}\n")
+        return 2
 
     return 2  # pragma: no cover - argparse subcommands make this unreachable.

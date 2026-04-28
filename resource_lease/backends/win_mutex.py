@@ -36,6 +36,8 @@ from ..info import (
     decode_frame,
     encode_frame,
     new_owner_token,
+    validate_namespace,
+    validate_resource_id,
 )
 
 logger = logging.getLogger("resource_lease.win_mutex")
@@ -358,14 +360,10 @@ class WindowsMutexMappingLeaseBackend(LeaseBackend):
                 "pywin32 not installed — install resource-lease[win32] to "
                 "use the Windows backend"
             )
-        if not namespace:
-            raise ValueError("namespace must be non-empty")
-        if "\\" in namespace:
-            raise ValueError("namespace must not contain backslashes")
-        self.namespace = namespace
+        self.namespace = validate_namespace(namespace)
         self.scope = scope
         self._sid_hash = _user_sid_hash()
-        self._ns_hash = _hash16(namespace)
+        self._ns_hash = _hash16(self.namespace)
         self._sa = _user_dacl_security_attrs()
 
         # Process-local source of truth — keeper threads + release events
@@ -381,6 +379,12 @@ class WindowsMutexMappingLeaseBackend(LeaseBackend):
     # ── public API ───────────────────────────────────────────────────────
 
     def acquire(self, resource_id: str, info: LeaseInfo) -> LeaseHandle:
+        resource_id = validate_resource_id(resource_id)
+        if info.resource_id != resource_id:
+            raise ValueError(
+                f"LeaseInfo.resource_id {info.resource_id!r} does not match "
+                f"acquire resource_id {resource_id!r}"
+            )
         rid_hash = _hash16(resource_id)
         owner_token = new_owner_token(info.pid or os.getpid())
 
@@ -435,6 +439,12 @@ class WindowsMutexMappingLeaseBackend(LeaseBackend):
         )
 
     def update(self, resource_id: str, info: LeaseInfo) -> LeaseInfo:
+        resource_id = validate_resource_id(resource_id)
+        if info.resource_id != resource_id:
+            raise ValueError(
+                f"LeaseInfo.resource_id {info.resource_id!r} does not match "
+                f"update resource_id {resource_id!r}"
+            )
         with self._held_lock:
             held = self._held.get(resource_id)
         if held is None:
@@ -469,6 +479,7 @@ class WindowsMutexMappingLeaseBackend(LeaseBackend):
             return stamped
 
     def _release(self, resource_id: str) -> None:
+        resource_id = validate_resource_id(resource_id)
         with self._held_lock:
             held = self._held.pop(resource_id, None)
         if held is None:
@@ -494,6 +505,7 @@ class WindowsMutexMappingLeaseBackend(LeaseBackend):
     def query(
         self, resource_id: str, *, timeout: float = 0.1
     ) -> Optional[LeaseInfo]:
+        resource_id = validate_resource_id(resource_id)
         rid_hash = _hash16(resource_id)
         mutex_name = _resource_mutex_name(
             self.scope, self._sid_hash, self._ns_hash, rid_hash
