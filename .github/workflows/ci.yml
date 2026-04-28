@@ -8,6 +8,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  dist:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Build sdist and wheel
+        run: uv build
+      - name: Smoke install wheel
+        run: |
+          uv venv
+          uv pip install dist/*.whl
+          uv run resource-lease --help
+
   linux:
     name: Linux common backend
     runs-on: ubuntu-latest
@@ -17,18 +36,20 @@ jobs:
         python-version: ["3.9", "3.13"]
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
       - name: Install
-        run: python -m pip install -e ".[dev]"
+        run: uv sync --python ${{ matrix.python-version }} --group dev
       - name: Lint
-        run: python -m ruff check resource_lease tests
+        run: uv run ruff check resource_lease tests
       - name: Coverage
         run: |
-          python -m coverage run --source=resource_lease --omit='resource_lease/backends/win_mutex.py' -m pytest tests/resource_lease -q
-          python -m coverage report --fail-under=100 --omit='resource_lease/backends/win_mutex.py'
+          uv run coverage run --source=resource_lease --omit='resource_lease/backends/win_mutex.py' -m pytest tests/resource_lease -q
+          uv run coverage report --fail-under=100 --omit='resource_lease/backends/win_mutex.py'
 
   windows:
     name: Windows mutex backend
@@ -39,14 +60,16 @@ jobs:
         python-version: ["3.9", "3.13"]
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
       - name: Install
-        run: python -m pip install -e ".[dev,win32]"
+        run: uv sync --python ${{ matrix.python-version }} --group dev --extra win32
       - name: Coverage
         shell: pwsh
         run: |
-          python -m coverage run --source=resource_lease.backends.win_mutex -m pytest tests/resource_lease/test_win_mutex.py tests/resource_lease/test_win_mutex_coverage.py -q
-          python -m coverage report --fail-under=100
+          uv run coverage run --source=resource_lease.backends.win_mutex -m pytest tests/resource_lease/test_win_mutex.py tests/resource_lease/test_win_mutex_coverage.py -q
+          uv run coverage report --fail-under=100

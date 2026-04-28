@@ -43,10 +43,22 @@ It does not parse device names, hosts, ports, or resource classes. Consumers cho
 pip install resource-lease
 ```
 
+With uv:
+
+```bash
+uv add resource-lease
+```
+
 Windows users who need the native named-mutex backend should install:
 
 ```bash
 pip install "resource-lease[win32]"
+```
+
+With uv:
+
+```bash
+uv add "resource-lease[win32]"
 ```
 
 ## Backends
@@ -67,6 +79,16 @@ JSON output is available with `--json`.
 
 ## Development
 
+uv is the preferred development path:
+
+```bash
+uv sync --group dev
+uv run pytest tests/resource_lease
+uv build
+```
+
+pip still works:
+
 ```bash
 python -m pip install -e ".[dev]"
 python -m pytest tests/resource_lease
@@ -75,21 +97,21 @@ python -m pytest tests/resource_lease
 Linux/common coverage gate:
 
 ```bash
-python -m coverage run --source=resource_lease \
+uv run coverage run --source=resource_lease \
   --omit='resource_lease/backends/win_mutex.py' \
   -m pytest tests/resource_lease
-python -m coverage report --fail-under=100 \
+uv run coverage report --fail-under=100 \
   --omit='resource_lease/backends/win_mutex.py'
 ```
 
 Windows backend coverage gate:
 
 ```powershell
-python -m pip install -e ".[dev,win32]"
-python -m coverage run --source=resource_lease.backends.win_mutex `
+uv sync --group dev --extra win32
+uv run coverage run --source=resource_lease.backends.win_mutex `
   -m pytest tests/resource_lease/test_win_mutex.py `
             tests/resource_lease/test_win_mutex_coverage.py
-python -m coverage report --fail-under=100
+uv run coverage report --fail-under=100
 ```
 
 ## Scope
