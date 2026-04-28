@@ -74,6 +74,26 @@ def test_update_status_publishes_new_metadata():
         b.close()
 
 
+def test_acquire_rejects_mismatched_info_resource_id():
+    b = WindowsMutexMappingLeaseBackend(_ns())
+    try:
+        with pytest.raises(ValueError, match="does not match"):
+            b.acquire("r0", _info("r1"))
+    finally:
+        b.close()
+
+
+def test_update_rejects_mismatched_info_resource_id():
+    b = WindowsMutexMappingLeaseBackend(_ns())
+    h = b.acquire("r0", _info("r0"))
+    try:
+        with pytest.raises(ValueError, match="does not match"):
+            b.update("r0", _info("r1"))
+    finally:
+        h.release()
+        b.close()
+
+
 def test_conflict_carries_owner_metadata():
     ns = _ns()
     a = WindowsMutexMappingLeaseBackend(ns)
